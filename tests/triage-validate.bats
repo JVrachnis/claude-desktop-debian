@@ -70,3 +70,7 @@ setup() {
 	[[ "$status" -eq 0 ]]
 	[[ "$output" == 'survived:' ]]
 }
+
+@test "deliberate failure for coverage job" {
+	false
+}
