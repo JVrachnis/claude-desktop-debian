@@ -534,13 +534,21 @@ PATCHES.patch_quick_window = {
         // The first log string in CODE (not in a comment or a decoy
         // copy): the patch searches from its first indexOf() hit.
         const anchor = 'Creating new chat with submit_quick_entry';
+        const hits = (ast) => findAll(ast, (x) =>
+            (strVal(x) || '').includes(anchor)).map((x) => x.start);
         const at = (ast) => {
-            const n = findAll(ast, (x) =>
-                (strVal(x) || '').includes(anchor))[0];
-            return n ? n.start : -1;
+            const h = hits(ast);
+            return h.length ? h[0] : -1;
         };
         const sv = pickShow(vAst, at(vAst));
         const so = pickShow(oAst, at(oAst));
+        // Later copies of the log line mark further submit paths the
+        // patch (first indexOf() only) never reaches: report them.
+        const later = hits(oAst).slice(1).map((h) => pickShow(oAst, h))
+            .filter((n) => n && unchain(n.left).type === 'CallExpression');
+        const laterNote = later.length ? `${later.length} later submit ` +
+            `path(s) after another copy of the log line left as ` +
+            later.map((n) => c(oSrc, n)).join(', ') : '';
         if (!sv || !so || unchain(sv.left).type !== 'CallExpression') {
             out.push(site('show', 'error',
                 'no F()||W.show() after the submit log line'));
@@ -554,7 +562,7 @@ PATCHES.patch_quick_window = {
                     cs(`!${w}||${w}.isDestroyed()?!1:${w}.isVisible()`) &&
                 c(oSrc, so.left.alternate) === c(vSrc, sv.left) &&
                 c(oSrc, so.right) === c(vSrc, sv.right);
-            out.push(site('show', ok ? 'ok' : 'wrong', ok ? ''
+            out.push(site('show', ok ? 'ok' : 'wrong', ok ? laterNote
                 : c(oSrc, so).slice(0, 200), sv, so));
         }
         return out;

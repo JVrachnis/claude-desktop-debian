@@ -459,6 +459,15 @@ function markdown(o, recs) {
         for (const r of bad) lines.push(...detail(r).map((l) => '    ' + l));
         lines.push('', '</details>');
     }
+    const noted = notes(recs);
+    if (noted.length) {
+        lines.push('', '<details><summary>Notes on the unmodified ' +
+            'bundle</summary>', '');
+        for (const r of noted) {
+            lines.push(...detail(r).map((l) => '    ' + l));
+        }
+        lines.push('', '</details>');
+    }
     const safe = recs.filter((r) => r.result === 'FAIL' ||
         r.result === 'NOOP');
     if (safe.length) {
@@ -471,6 +480,14 @@ function markdown(o, recs) {
         lines.push('', '</details>');
     }
     return lines.join('\n') + '\n';
+}
+
+// What the oracles noticed about correct results on the real bytes
+// (identity only: the same note on every variant is noise).
+function notes(recs) {
+    return recs.filter((r) => r.variant === 'identity' &&
+        r.result === 'OK' &&
+        (r.sites.some((x) => x.why) || (r.notes || []).length));
 }
 
 function detail(r) {
@@ -546,6 +563,11 @@ async function main() {
             if (!SAFE.has(r.result) && r.result !== 'NA') {
                 process.stdout.write(detail(r).join('\n') + '\n');
             }
+        }
+        const noted = notes(recs);
+        if (noted.length) {
+            process.stdout.write('\nNotes on the unmodified bundle:\n' + noted.map(
+                (r) => detail(r).join('\n')).join('\n') + '\n');
         }
         const safe = recs.filter((r) => r.result === 'FAIL' ||
             r.result === 'NOOP');
