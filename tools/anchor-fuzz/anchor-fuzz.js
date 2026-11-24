@@ -275,6 +275,15 @@ function strayCheck(vSrc, oSrc, results, markers) {
             .replace(/\u0000/g, '\u2026'));
 }
 
+// The line of patch output that says why it stopped.
+function why(output) {
+    const lines = output.split('\n').map((l) => l.trim()).filter(Boolean);
+    const hit = lines.filter((l) => /WARNING|ERROR|Anchor '|matched|expected/
+        .test(l));
+    return (hit.length ? hit[0] : lines[lines.length - 1] || '')
+        .slice(0, 200);
+}
+
 function classify(rec) {
     if (rec.rc !== 0) return 'FAIL';
     if (rec.corrupt) return 'CORRUPT';
@@ -311,7 +320,10 @@ function fuzzOne(o, bundle, sites, variant, patch, vFiles, vAsts) {
         const run = runPatch(o.repo, tmp, patch);
         rec.rc = run.rc;
         rec.output = run.output.split('\n').slice(-6).join('\n');
-        if (run.rc !== 0) return rec;
+        if (run.rc !== 0) {
+            rec.reason = why(run.output);
+            return rec;
+        }
 
         const after = readTree(build);
         const own = Object.keys(sites[patch]).filter((f) =>
@@ -447,6 +459,17 @@ function markdown(o, recs) {
         for (const r of bad) lines.push(...detail(r).map((l) => '    ' + l));
         lines.push('', '</details>');
     }
+    const safe = recs.filter((r) => r.result === 'FAIL' ||
+        r.result === 'NOOP');
+    if (safe.length) {
+        lines.push('', '<details><summary>Safe stops: which anchor ' +
+            'gave up, and why</summary>', '');
+        for (const r of safe) {
+            lines.push(`    ${CELL[r.result]}: ${r.patch} × ${r.variant} — ` +
+                (r.reason || 'changed nothing'));
+        }
+        lines.push('', '</details>');
+    }
     return lines.join('\n') + '\n';
 }
 
@@ -523,6 +546,14 @@ async function main() {
             if (!SAFE.has(r.result) && r.result !== 'NA') {
                 process.stdout.write(detail(r).join('\n') + '\n');
             }
+        }
+        const safe = recs.filter((r) => r.result === 'FAIL' ||
+            r.result === 'NOOP');
+        if (safe.length) {
+            process.stdout.write('\nSafe stops (brittle anchors):\n' +
+                safe.map((r) => `  ${CELL[r.result]}: ${r.patch} × ` +
+                    `${r.variant} — ${r.reason || 'changed nothing'}`)
+                    .join('\n') + '\n');
         }
         const counts = {};
         for (const r of recs) counts[r.result] = (counts[r.result] || 0) + 1;
