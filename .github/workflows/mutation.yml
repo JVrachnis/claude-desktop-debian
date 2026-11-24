@@ -1,0 +1,103 @@
+name: Mutation
+run-name: |
+  Mutation: ${{
+    github.event_name == 'pull_request' && format('PR #{0} by @{1} - {2}', github.event.pull_request.number, github.actor, github.event.pull_request.title) ||
+    format('{0} triggered by @{1}', github.event_name, github.actor)
+  }}
+
+# Mutation testing for the scripts listed in tools/mutation-targets.conf,
+# measured only. It automates the review discipline in
+# docs/learnings/test-methodology-and-coverage.md: break the code, and
+# if no test goes red the test is decoration. Every surviving mutant is
+# listed in the job summary. Some survivors are equivalent mutants (a
+# change that cannot alter behaviour), so there is no threshold, every
+# measuring step is continue-on-error, and the job is not meant to be a
+# required check.
+#
+# On pull requests only the targets whose script or covering tests the
+# PR touches are mutated (--changed); the weekly and manual runs cover
+# every target.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - "tests/**"
+      - "tools/mutation-*"
+      - ".github/workflows/mutation.yml"
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    name: Mutation testing (informational)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # The PR merge commit and its base, for --changed.
+          fetch-depth: 2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Install BATS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bats python3
+
+      - name: Pick targets
+        id: targets
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [[ $EVENT == pull_request ]]; then
+            # On pull_request the checkout is the merge commit, so its
+            # first parent is the base and this diff is the PR's change.
+            changed=$(git diff --name-only HEAD^1 HEAD | tr '\n' ' ')
+            echo "args=--changed $changed" >> "$GITHUB_OUTPUT"
+          else
+            echo 'args=' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run mutation testing
+        continue-on-error: true
+        env:
+          TARGET_ARGS: ${{ steps.targets.outputs.args }}
+        run: |
+          # shellcheck disable=SC2086 # TARGET_ARGS is a word list
+          python3 tools/mutation-test.py --jobs "$(nproc)" \
+            --out mutation-report $TARGET_ARGS
+
+      - name: Write job summary
+        if: always()
+        continue-on-error: true
+        run: |
+          if [[ -f mutation-report/summary.md ]]; then
+            cat mutation-report/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No mutation report was produced.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-report
+          path: mutation-report/
+          if-no-files-found: ignore
