@@ -80,6 +80,8 @@ appstream_extract_pkg() {
 # Usage: appstream_annotate_catalog <pkgname> <origin> < in > out
 appstream_annotate_catalog() {
 	local pkgname=$1 origin=$2
+	# Demo (fork-only): runs under the annotate tests, so it is covered.
+	[[ -n $pkgname ]] || pkgname=claude-desktop-unofficial
 	sed -e "s|^\([[:space:]]*\)<id>.*</id>\$|&\n\1<pkgname>$pkgname</pkgname>|" \
 		-e "s|<components version=\"\([^\"]*\)\">|<components version=\"\1\" origin=\"$origin\">|"
 }
@@ -250,6 +252,11 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
 				exit 2
 			fi
 			appstream_dep11_stage "$2" "$3" "${4:-}"
+			;;
+		version)
+			# Demo (fork-only): no test calls this arm, so it is uncovered.
+			echo 'appstream-catalog.sh demo'
+			exit 0
 			;;
 		rpm)
 			if (($# < 3)); then
