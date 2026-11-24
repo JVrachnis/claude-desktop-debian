@@ -64,6 +64,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # On pull_request this is the merge commit; its first parent
+          # is the base, which the changed-lines step diffs against.
+          fetch-depth: 2
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -159,6 +163,28 @@ jobs:
         if: always()
         run: ./tools/coverage-summary.sh coverage >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Changed-lines coverage
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        # Which lines this PR adds or changes that no test runs. The
+        # checkout is the merge commit, so `HEAD^1..HEAD` is exactly the
+        # PR's change, numbered as in the tree that was measured. Fork
+        # PRs get a read-only token, so the report goes to the job
+        # summary, the artifact and `::notice` annotations (which show
+        # on the Files tab); nothing comments on the PR.
+        run: |
+          mkdir -p coverage
+          git diff --unified=0 --no-color HEAD^1 HEAD > coverage/pr.diff
+          python3 tools/coverage-diff.py --diff coverage/pr.diff \
+            --cobertura coverage/bats/kcov-merged/cobertura.xml \
+            --lcov coverage/c8/lcov.info \
+            --scope scripts/ --scope build.sh --scope tools/ \
+            --exclude scripts/cowork-fallback/tests/ \
+            --json coverage/changed-lines.json \
+            --annotations coverage/changed-lines.notices \
+            >> "$GITHUB_STEP_SUMMARY"
+          cat coverage/changed-lines.notices
+
       - name: Upload coverage reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -169,5 +195,7 @@ jobs:
             coverage/bats/kcov-merged/coverage.json
             coverage/c8/lcov.info
             coverage/c8/lcov-report/
+            coverage/pr.diff
+            coverage/changed-lines.json
           if-no-files-found: warn
           retention-days: 14
