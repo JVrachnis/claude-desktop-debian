@@ -1,0 +1,1 @@
+"use strict";const t={rUt:(e,f)=>f};class Ptys{constructor(){this.shellPtyProcesses=new Map}start(e,H){H.onData(t.rUt("pty:shell-data",(t=>{if(this.shellPtyProcesses.get(e)!==H)return;this.emit(e,t)})))}writeShellPty(e,n,r){let{sessionId:i}=Q(e);let o=this.shellPtyProcesses.get(e);o&&o.write(n)}emit(){}}function Q(e){return{sessionId:e}}module.exports=Ptys;
