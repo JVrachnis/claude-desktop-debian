@@ -16,7 +16,7 @@ run-name: |
 #
 # On pull requests only the targets whose script or covering tests the
 # PR touches are mutated (--changed); the weekly and manual runs cover
-# every target.
+# every target, and so does a PR that changes the tool or its config.
 
 on:
   pull_request:
@@ -69,7 +69,13 @@ jobs:
             # On pull_request the checkout is the merge commit, so its
             # first parent is the base and this diff is the PR's change.
             changed=$(git diff --name-only HEAD^1 HEAD | tr '\n' ' ')
-            echo "args=--changed $changed" >> "$GITHUB_OUTPUT"
+            # A change to the tool, its targets or this workflow can
+            # move every target's result, so run them all.
+            if [[ " $changed" =~ \ (tools/mutation-|\.github/workflows/mutation\.yml) ]]; then
+              echo 'args=' >> "$GITHUB_OUTPUT"
+            else
+              echo "args=--changed $changed" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo 'args=' >> "$GITHUB_OUTPUT"
           fi
