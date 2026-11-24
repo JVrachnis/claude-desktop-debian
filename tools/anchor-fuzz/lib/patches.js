@@ -536,16 +536,18 @@ PATCHES.patch_quick_window = {
         const anchor = 'Creating new chat with submit_quick_entry';
         const hits = (ast) => findAll(ast, (x) =>
             (strVal(x) || '').includes(anchor)).map((x) => x.start);
-        const at = (ast) => {
-            const h = hits(ast);
-            return h.length ? h[0] : -1;
-        };
-        const sv = pickShow(vAst, at(vAst));
-        const so = pickShow(oAst, at(oAst));
+        // The site is the first F()||W.show() after a copy of the log
+        // line, whichever copy that is: if upstream puts a copy with no
+        // show() first, the patch (first indexOf() hit only) misses it.
+        const first = (ast) => hits(ast).map((h) => pickShow(ast, h))
+            .find(Boolean);
+        const sv = first(vAst);
+        const so = first(oAst);
         // Later copies of the log line mark further submit paths the
         // patch (first indexOf() only) never reaches: report them.
-        const later = hits(oAst).slice(1).map((h) => pickShow(oAst, h))
-            .filter((n) => n && unchain(n.left).type === 'CallExpression');
+        const later = hits(oAst).map((h) => pickShow(oAst, h))
+            .filter((n) => n && n !== so &&
+                unchain(n.left).type === 'CallExpression');
         const laterNote = later.length ? `${later.length} later submit ` +
             `path(s) after another copy of the log line left as ` +
             later.map((n) => c(oSrc, n)).join(', ') : '';
