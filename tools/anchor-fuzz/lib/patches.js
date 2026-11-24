@@ -394,9 +394,12 @@ PATCHES.patch_terminal_da_reply = {
     script: 'terminal-da-reply.sh',
     sites: (src) => [
         ...spans(src, /\.onData\([\w$.]+\(\s*[`"']pty:shell-data/, 120, 200),
+        // 2000 after: the patch checks that much of the method body for
+        // this.shellPtyProcesses.get(<key>), so a rename of <key> must
+        // reach that far or it reads as a patch failure.
         ...spans(src,
             /\bwriteShellPty\(\s*[\w$]+\s*,\s*[\w$]+\s*,\s*[\w$]+\s*\)\s*\{/,
-            60, 260),
+            60, 2000),
     ],
     // Only the chunk with the data handler is the patch's file; other
     // chunks hold IPC forwarders also named writeShellPty.
