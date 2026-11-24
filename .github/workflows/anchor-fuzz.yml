@@ -1,0 +1,93 @@
+name: Anchor fuzz
+run-name: |
+  Anchor fuzz: ${{
+    github.event_name == 'pull_request' && format('PR #{0} by @{1} - {2}', github.event.pull_request.number, github.actor, github.event.pull_request.title) ||
+    format('{0} triggered by @{1}', github.event_name, github.actor)
+  }}
+
+# Runs tools/anchor-fuzz.sh against the pinned official .deb: every
+# active asar patch is applied to semantics-preserving re-spellings of
+# its own anchor region (renamed minified names, other quotes, beautified
+# whitespace, (0,x.y)() calls, optional chaining, true for !0, ...) and
+# the result is checked structurally. Informational, like coverage.yml:
+# a fuzz finding is a robustness note for the patch author, not a reason
+# to red a PR, so the fuzz step is continue-on-error and this is not
+# meant to be a required check. The matrix lands in the step summary.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/patches/**"
+      - "tools/anchor-fuzz.sh"
+      - "tools/anchor-fuzz/**"
+      - "tests/fixtures/anchor-fuzz/**"
+      - ".github/workflows/anchor-fuzz.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anchor-fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Patch-anchor fuzz (informational)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Fuzz the active patches
+        id: fuzz
+        continue-on-error: true
+        # --jobs 2: each variant worker holds three parses of the 7 MB
+        # main chunk (~1 GB); the runner has 16 GB and 4 cores.
+        run: |
+          tools/anchor-fuzz.sh --jobs 2 \
+            --markdown "$RUNNER_TEMP/anchor-fuzz.md" \
+            --json "$RUNNER_TEMP/anchor-fuzz.json" \
+            | tee "$RUNNER_TEMP/anchor-fuzz.txt"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Summarize
+        if: always()
+        env:
+          FUZZ_OUTCOME: ${{ steps.fuzz.outcome }}
+        run: |
+          {
+            echo '## Patch-anchor fuzz'
+            echo
+            if [[ -s $RUNNER_TEMP/anchor-fuzz.md ]]; then
+              cat "$RUNNER_TEMP/anchor-fuzz.md"
+            else
+              echo 'The fuzzer produced no matrix; see the job log.'
+            fi
+            if [[ $FUZZ_OUTCOME == failure ]]; then
+              echo
+              echo '> The fuzz step exited non-zero. Exit 3 means the'
+              echo '> identity row is not all ok: the site map or an'
+              echo '> oracle in tools/anchor-fuzz/lib/patches.js is stale'
+              echo '> for the pinned bundle.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: anchor-fuzz
+          path: |
+            ${{ runner.temp }}/anchor-fuzz.json
+            ${{ runner.temp }}/anchor-fuzz.txt
+          if-no-files-found: warn
+          retention-days: 14
