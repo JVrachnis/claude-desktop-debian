@@ -181,6 +181,24 @@ Before calling any shell test "merge-ready," neuter the code it guards and confi
 
 Question 6 is the one that matters. The rest are the specific ways the answer to 6 comes out "no" while CI stays green.
 
+## Environment variability
+
+`tools/flaky-check.sh` reruns the suite under changed conditions (order reversed or shuffled, `TZ`, `LC_ALL`, a `077` umask, paths with spaces, a stripped environment) and in containers, then lists every test whose outcome differs between runs. Run it before trusting a suite that only ever ran on one machine:
+
+```bash
+tools/flaky-check.sh --conditions baseline,reverse,shuffle,umask-077
+tools/flaky-check.sh --container ubuntu:24.04:user --container fedora:latest:user
+tools/flaky-check.sh --compare results-a results-b   # merge earlier runs
+```
+
+The first full run (November 2026: eight host conditions; Ubuntu 24.04 as root and as a user, Ubuntu 26.04, Fedora) found no order- or locale-dependent test. What it did find:
+
+- **The launcher needs `cmp`, and nothing declares it.** `launcher-common.sh` calls `cmp -s` in `backup_user_config` and the file-manager healing. Debian marks `diffutils` Essential, but the RPM is built with `AutoReqProv: no` and no `Requires:`, and `fedora:latest` ships without it: 15 tests fail there with `cmp: command not found` / `diff: command not found`. The failures are real behaviour, not test noise: with `cmp` missing, the unchanged-config check never matches, so every launch rotates the backups, and five launches push a pre-wipe copy out of the last slot.
+- **bats 1.10 registers `@test` lines inside heredocs.** Ubuntu 24.04's apt bats (the one CI installs) preprocesses a heredoc line that starts with `@test` as a real test, then fails with `unknown test name` and `Executed N instead of expected M`. The missing tests never reach the JUnit report, so the checker scans its run logs for those two warnings. Build bats fixtures with `printf`, not a heredoc.
+- **mawk ignores `srand(seed)` for reproducibility.** Ubuntu's default `awk` gave a different "seeded" order every run. The shuffle uses its own Park-Miller generator, which every awk computes identically.
+- **bats' JUnit `classname` is the path as invoked**, absolute or relative depending on how bats was called, so results are keyed on the file's basename.
+- **Expected, not bugs:** 11 permission tests skip as root (they test unreadable or unwritable files); the label-vocabulary test skips wherever `gh` is not signed in, including the `space-paths` condition, which moves `HOME`.
+
 ## References
 
 - Test-infra PRs: [#310](https://github.com/aaddrick/claude-desktop-debian/pull/310) (SHA-256 verify), [#338](https://github.com/aaddrick/claude-desktop-debian/pull/338) (artifact structure), [#520](https://github.com/aaddrick/claude-desktop-debian/pull/520) (wire BATS into CI), [#592](https://github.com/aaddrick/claude-desktop-debian/pull/592)/[#646](https://github.com/aaddrick/claude-desktop-debian/pull/646)/[#671](https://github.com/aaddrick/claude-desktop-debian/pull/671)/[#691](https://github.com/aaddrick/claude-desktop-debian/pull/691) (launch-smoke evolution), [#606](https://github.com/aaddrick/claude-desktop-debian/pull/606) (CI concurrency)

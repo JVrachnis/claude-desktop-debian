@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) — 
 
 <!-- Updated automatically by check-claude-version; will be current at release time. -->
 
+### Added
+
+- `tools/flaky-check.sh` and an informational `Flaky check` workflow: the BATS suite reruns with the file order reversed or shuffled, in parallel, under other time zones, locales and umasks, with spaces in `TMPDIR`/`HOME`, with a stripped or a desktop-session environment, and in other distros as root or as a user, optionally with the real package installed. Any test whose result differs between runs is listed with the conditions that flipped it. Runs weekly and on demand; nothing in it can fail a PR
+
 ## [v3.3.20] — 2026-11-24
 
 ### Added

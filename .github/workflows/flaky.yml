@@ -1,0 +1,145 @@
+name: Flaky check
+run-name: |
+  Flaky: ${{
+    github.event_name == 'pull_request' && format('PR #{0} by @{1} - {2}', github.event.pull_request.number, github.actor, github.event.pull_request.title) ||
+    format('{0} triggered by @{1}', github.event_name, github.actor)
+  }}
+
+# Runs the BATS suite under varied conditions and reports every test whose
+# outcome changes between them (tools/flaky-check.sh): file order, parallel
+# jobs, time zone, locale, umask, spaces in paths, a stripped or a desktop
+# session environment, and other distros as root or as a user. A flip means
+# a test depends on something it does not set up itself. Informational:
+# nothing here can red a PR, and the job is not meant to be required. It
+# runs weekly, on demand, and on PRs that change the checker itself.
+
+on:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/flaky-check.sh"
+      - "tests/flaky-check.bats"
+      - ".github/workflows/flaky.yml"
+
+permissions:
+  contents: read
+  # Same single read-only call tests.yml grants: the label-vocabulary
+  # test runs `gh label list` against the canonical repo.
+  issues: read
+
+concurrency:
+  group: flaky-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runner:
+    name: Conditions on the runner
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install BATS, Node.js, GNU parallel and a Turkish locale
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats nodejs parallel locales
+          sudo locale-gen tr_TR.UTF-8
+
+      - name: Run every condition
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tools/flaky-check.sh --prefix runner --out flaky-runner \
+            --conditions baseline,reverse,shuffle,jobs,tz-east,tz-west,locale-c,locale-tr,umask-077,space-paths,clean-env,session-env
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: flaky-runner
+          path: |
+            flaky-runner/*.tsv
+            flaky-runner/skipped
+            flaky-runner/report.md
+            flaky-runner/logs/
+          if-no-files-found: warn
+
+  distros:
+    name: Baseline in ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-24.04-root
+            image: ubuntu:24.04
+          - name: ubuntu-26.04-root
+            image: ubuntu:26.04
+          - name: fedora-root
+            image: fedora:latest
+    steps:
+      - name: Install BATS, Node.js and git
+        run: |
+          if command -v apt-get > /dev/null; then
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq bats nodejs git file procps xz-utils python3
+          else
+            dnf -y -q install bats nodejs git file procps-ng xz python3
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Run baseline and reverse
+        continue-on-error: true
+        env:
+          NAME: ${{ matrix.name }}
+        run: |
+          tools/flaky-check.sh --prefix "$NAME" --out "flaky-$NAME" \
+            --conditions baseline,reverse
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: flaky-${{ matrix.name }}
+          path: |
+            flaky-${{ matrix.name }}/*.tsv
+            flaky-${{ matrix.name }}/skipped
+            flaky-${{ matrix.name }}/logs/
+          if-no-files-found: warn
+
+  compare:
+    name: Compare all runs
+    needs: [runner, distros]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Download results
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: flaky-*
+          path: results
+
+      - name: Compare
+        continue-on-error: true
+        run: |
+          tools/flaky-check.sh --compare --out flaky-all results/*/ \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the combined report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: flaky-report
+          path: flaky-all/
+          if-no-files-found: warn
