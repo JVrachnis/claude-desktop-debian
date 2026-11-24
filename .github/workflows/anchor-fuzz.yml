@@ -75,9 +75,9 @@ jobs:
             if [[ $FUZZ_OUTCOME == failure ]]; then
               echo
               echo '> The fuzz step exited non-zero. Exit 3 means the'
-              echo '> identity row is not all ok: the site map or an'
-              echo '> oracle in tools/anchor-fuzz/lib/patches.js is stale'
-              echo '> for the pinned bundle.'
+              echo '> identity row is not all ok: a patch mis-applies to'
+              echo '> the pinned bundle as shipped, or the site map or an'
+              echo '> oracle in tools/anchor-fuzz/lib/patches.js is stale.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

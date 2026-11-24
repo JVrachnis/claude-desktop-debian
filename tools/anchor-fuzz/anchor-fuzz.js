@@ -587,8 +587,9 @@ async function main() {
         const broken = recs.some((r) => r.variant === 'identity' &&
             r.result !== 'OK');
         if (broken) {
-            process.stderr.write('identity row is not all OK: the oracle ' +
-                'or the site map is out of date for this bundle\n');
+            process.stderr.write('identity row is not all OK: either a ' +
+                'patch mis-applies to the unmodified bundle (a finding: ' +
+                'see above) or the site map or an oracle is stale\n');
             return 3;
         }
         return o.strict && danger ? 2 : 0;

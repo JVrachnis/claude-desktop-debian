@@ -37,8 +37,9 @@
 #   ?         the oracle could not read this variant (fuzzer limitation)
 #   -         the variant does not touch this patch's sites
 #
-# Exits 3 when the identity variant is not all ok: the site map or an
-# oracle in tools/anchor-fuzz/lib/patches.js is stale for this bundle.
+# Exits 3 when the identity variant is not all ok: either a patch
+# mis-applies to the unmodified bundle, or the site map or an oracle in
+# tools/anchor-fuzz/lib/patches.js is stale for this bundle.
 #===============================================================================
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
